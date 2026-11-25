@@ -17,6 +17,7 @@ import {
 // DOM参照
 const el = {
   video: document.getElementById('camera-video'),
+  freezeCanvas: document.getElementById('freeze-canvas'),
   canvas: document.getElementById('capture-canvas'),
   stage: document.getElementById('viewfinder-stage'),
   frame: document.getElementById('viewfinder-frame'),
@@ -136,6 +137,43 @@ let statusPillTimer = null;
 let quickToastTimer = null;
 let focusHideTimer = null;
 let zoomWheelHideTimer = null;
+
+// ===== フリーズフレーム（レンズ切替時の暗転防止トランジション） =====
+let freezeFadeTimer = null;
+
+function showFreezeFrame() {
+  const video = el.video;
+  if (!video.videoWidth || !video.videoHeight) return;
+  clearTimeout(freezeFadeTimer);
+  const fc = el.freezeCanvas;
+  const maxDim = 480;
+  const scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight));
+  fc.width = Math.max(1, Math.round(video.videoWidth * scale));
+  fc.height = Math.max(1, Math.round(video.videoHeight * scale));
+  const ctx = fc.getContext('2d', { alpha: false });
+  ctx.save();
+  if (engine.facingMode === 'user' && state.mirrorFront) {
+    ctx.translate(fc.width, 0);
+    ctx.scale(-1, 1);
+  }
+  ctx.drawImage(video, 0, 0, fc.width, fc.height);
+  ctx.restore();
+  fc.classList.remove('fade-out', 'hidden');
+}
+
+function hideFreezeFrame() {
+  const fc = el.freezeCanvas;
+  if (fc.classList.contains('hidden')) return;
+  fc.classList.add('fade-out');
+  clearTimeout(freezeFadeTimer);
+  freezeFadeTimer = setTimeout(() => {
+    fc.classList.add('hidden');
+    fc.classList.remove('fade-out');
+  }, 190);
+}
+
+engine.onBeforeLensSwitch = showFreezeFrame;
+engine.onAfterLensSwitch = hideFreezeFrame;
 
 // ===== 初期化 =====
 async function bootstrap() {
@@ -934,11 +972,23 @@ function bindEvents() {
     await applyExposure(0);
   });
 
-  // ズームホイールスライダー
-  el.zoomRangeSlider.addEventListener('input', async (e) => {
+  // ズームホイールスライダー（ドラッグ中は滑らかズームのみ、離した時に1回だけ物理レンズ切替）
+  el.zoomRangeSlider.addEventListener('input', (e) => {
+    clearTimeout(zoomWheelHideTimer);
+    zoomWheelHideTimer = setTimeout(() => el.zoomWheel.classList.add('hidden'), 3000);
+    applyZoom(Number(e.target.value), false);
+  });
+  el.zoomRangeSlider.addEventListener('change', async (e) => {
     clearTimeout(zoomWheelHideTimer);
     zoomWheelHideTimer = setTimeout(() => el.zoomWheel.classList.add('hidden'), 3000);
     await applyZoom(Number(e.target.value), true);
+  });
+
+  // iPhoneのバックグラウンド復帰・画面ロック解除時の暗転を自動復旧
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && state.ready) {
+      engine.ensureStreamAlive().then(() => updatePreviewTransformAndFilter()).catch(() => {});
+    }
   });
 
   // ギャラリー操作
