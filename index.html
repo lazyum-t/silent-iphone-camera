@@ -65,7 +65,7 @@
 
     <!-- ビューファインダーエリア -->
     <main class="viewfinder-stage" id="viewfinder-stage">
-      <div class="viewfinder-frame aspect-4-3" id="viewfinder-frame">
+      <div class="viewfinder-frame aspect-full" id="viewfinder-frame">
         <video id="camera-video" autoplay playsinline muted></video>
         <canvas id="freeze-canvas" class="freeze-canvas hidden" aria-hidden="true"></canvas>
         <canvas id="capture-canvas" class="hidden"></canvas>
@@ -131,12 +131,17 @@
           </div>
         </div>
 
+        <!-- カメラ上部ズームバー（タッチ判定広め） -->
+        <div class="zoom-wheel hidden" id="zoom-wheel">
+          <div class="zoom-wheel-header">
+            <span class="zoom-wheel-label">ズーム</span>
+            <span class="zoom-wheel-value" id="zoom-wheel-value">1.0×</span>
+          </div>
+          <input id="zoom-range-slider" type="range" min="0.5" max="10" step="0.1" value="1" aria-label="ズーム倍率" />
+        </div>
+
         <!-- レンズ倍率セレクター（0.5 / 1x / 2 / 3） -->
         <div class="zoom-controls-wrap" id="zoom-controls-wrap">
-          <div class="zoom-wheel hidden" id="zoom-wheel">
-            <div class="zoom-wheel-value" id="zoom-wheel-value">1.0x</div>
-            <input id="zoom-range-slider" type="range" min="0.5" max="10" step="0.1" value="1" aria-label="ズーム倍率" />
-          </div>
           <div class="lens-selector" id="lens-selector" role="group" aria-label="レンズ倍率切替">
             <!-- JSで検出レンズに合わせて動的生成（デフォルト: 0.5, 1x, 2, 3） -->
           </div>
@@ -183,7 +188,7 @@
       <!-- メインツールアイコン列 -->
       <div class="drawer-tools">
         <button class="drawer-tool-btn" id="tool-aspect" type="button">
-          <span class="tool-badge" id="tool-aspect-val">4:3</span>
+          <span class="tool-badge" id="tool-aspect-val">フル</span>
           <span class="tool-label">比率</span>
         </button>
         <button class="drawer-tool-btn" id="tool-timer" type="button">
@@ -293,10 +298,13 @@
       <header class="gallery-header">
         <button id="btn-gallery-close" class="gallery-nav-btn" type="button">カメラに戻る</button>
         <div class="gallery-title-wrap">
-          <span id="gallery-title">撮影済み (0)</span>
-          <span id="gallery-subtitle" class="gallery-subtitle">長押しまたは下のボタンで写真アプリへ保存</span>
+          <span id="gallery-title">一時保存 (0)</span>
+          <span id="gallery-subtitle" class="gallery-subtitle">使用容量: 0.0 MB（本体保存で自動削除）</span>
         </div>
-        <button id="btn-gallery-save-all" class="gallery-save-all-btn hidden" type="button">すべて写真に保存</button>
+        <div class="gallery-header-actions">
+          <button id="btn-gallery-save-all" class="gallery-save-all-btn hidden" type="button">すべて写真へ</button>
+          <button id="btn-gallery-clear-all" class="gallery-clear-all-btn hidden" type="button" title="一時保存をすべて完全削除">全削除</button>
+        </div>
       </header>
 
       <div id="gallery-content" class="gallery-content">
@@ -340,7 +348,7 @@
 
       <!-- iOS保存ガイドバナー -->
       <div id="ios-hint-bar" class="ios-hint-bar">
-        <span>共有シートが開いたら<strong>「画像を保存」</strong>を選ぶとiPhoneの純正「写真」アプリに保存されます。</span>
+        <span>共有シートで<strong>「画像を保存」</strong>すると本体に保存され、容量節約のためこのアプリ内から<strong>自動で完全削除</strong>されます。</span>
         <button id="btn-dismiss-hint" type="button" aria-label="閉じる">✕</button>
       </div>
     </div>

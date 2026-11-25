@@ -59,9 +59,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(var(--safe-top) + 8px) 14px 8px;
-  min-height: calc(var(--safe-top) + 48px);
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 100%);
+  padding: calc(var(--safe-top) + 3px) 12px 4px;
+  min-height: calc(var(--safe-top) + 38px);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.45) 100%);
   z-index: 20;
   flex-shrink: 0;
 }
@@ -232,6 +232,11 @@ body {
   touch-action: none;
 }
 
+.viewfinder-frame.aspect-full {
+  width: 100%;
+  height: 100%;
+}
+
 .viewfinder-frame.aspect-4-3 {
   aspect-ratio: 3 / 4;
   max-height: 100%;
@@ -394,6 +399,12 @@ body {
   z-index: 13;
   pointer-events: none;
   white-space: nowrap;
+  transition: top 0.16s ease;
+}
+
+.viewfinder-frame.zoom-bar-open .status-pill,
+.viewfinder-frame.zoom-bar-open .ae-af-badge {
+  top: 98px;
 }
 
 /* タップフォーカス枠 + 露出太陽スライダー */
@@ -591,42 +602,105 @@ body {
   transform: scale(0.98);
 }
 
-/* ===== レンズ倍率セレクター（0.5 / 1x / 2 / 3） ===== */
+/* ===== レンズ倍率セレクター（下部） & ズームバー（上部） ===== */
 .zoom-controls-wrap {
   position: absolute;
-  bottom: 14px;
+  bottom: 8px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   z-index: 12;
 }
 
 .zoom-wheel {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(310px, 88%);
   display: flex;
   flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 10px 18px 8px;
+  border-radius: 20px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  z-index: 18;
+  touch-action: none;
+}
+
+.zoom-wheel-header {
+  display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 8px 16px;
-  border-radius: 18px;
-  background: rgba(0, 0, 0, 0.68);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  justify-content: space-between;
+  padding: 0 2px;
+}
+
+.zoom-wheel-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.72);
 }
 
 .zoom-wheel-value {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--yellow);
   font-variant-numeric: tabular-nums;
 }
 
 #zoom-range-slider {
-  width: 210px;
-  accent-color: var(--yellow);
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 48px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: none;
+}
+
+#zoom-range-slider::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.34);
+}
+
+#zoom-range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--yellow);
+  border: 3px solid #ffffff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.65);
+  margin-top: -11.5px;
+}
+
+#zoom-range-slider::-moz-range-track {
+  width: 100%;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.34);
+}
+
+#zoom-range-slider::-moz-range-thumb {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--yellow);
+  border: 3px solid #ffffff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.65);
 }
 
 .lens-selector {
@@ -891,13 +965,13 @@ body {
   white-space: nowrap;
 }
 
-/* ===== ボトムコントロール（モード + シャッター） ===== */
+/* ===== ボトムコントロール（モード + シャッター：PWA向けに下寄せ・省スペース化） ===== */
 .bottom-controls {
-  padding: 10px 18px calc(var(--safe-bottom) + 14px);
+  padding: 5px 16px calc(max(var(--safe-bottom), 4px) + 2px);
   background: rgba(0, 0, 0, 0.96);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 6px;
   flex-shrink: 0;
   z-index: 20;
 }
@@ -913,10 +987,10 @@ body {
   background: none;
   border: none;
   color: rgba(255, 255, 255, 0.65);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
-  padding: 4px 2px;
+  padding: 2px 2px;
   cursor: pointer;
   transition: color 0.16s ease, transform 0.16s ease;
 }
@@ -930,13 +1004,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 10px;
+  padding: 0 12px;
 }
 
 .gallery-thumb-btn {
   position: relative;
-  width: 50px;
-  height: 50px;
+  width: 44px;
+  height: 44px;
   border-radius: 10px;
   border: 1.5px solid rgba(255, 255, 255, 0.25);
   background: #18181a;
@@ -987,8 +1061,8 @@ body {
 
 /* 純正シャッターボタン */
 .shutter-btn {
-  width: 74px;
-  height: 74px;
+  width: 66px;
+  height: 66px;
   padding: 0;
   background: none;
   border: none;
@@ -999,10 +1073,10 @@ body {
 }
 
 .shutter-ring {
-  width: 72px;
-  height: 72px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
-  border: 4px solid #fff;
+  border: 3.5px solid #fff;
   padding: 4px;
   display: flex;
   align-items: center;
@@ -1029,14 +1103,14 @@ body {
 .shutter-btn.recording .shutter-inner {
   background: var(--red);
   border-radius: 8px;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
 }
 
 /* カメラ反転ボタン */
 .flip-btn {
-  width: 50px;
-  height: 50px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   border: none;
   background: rgba(255, 255, 255, 0.14);
@@ -1054,8 +1128,8 @@ body {
 }
 
 .flip-btn svg {
-  width: 26px;
-  height: 26px;
+  width: 23px;
+  height: 23px;
 }
 
 /* ===== ギャラリーモーダル ===== */
@@ -1109,13 +1183,32 @@ body {
   color: var(--text-muted);
 }
 
+.gallery-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .gallery-save-all-btn {
-  padding: 6px 11px;
+  padding: 6px 10px;
   border-radius: 999px;
   border: none;
   background: var(--yellow);
   color: #000;
-  font-size: 11.5px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.gallery-clear-all-btn {
+  padding: 6px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 59, 48, 0.45);
+  background: rgba(255, 59, 48, 0.16);
+  color: var(--red);
+  font-size: 11px;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;

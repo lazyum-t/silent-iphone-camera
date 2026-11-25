@@ -715,7 +715,8 @@ export class CameraEngine {
    * 完全無音で高解像度の静止画をキャプチャする
    */
   captureSilentPhoto({
-    aspectRatio = '4:3',
+    aspectRatio = 'full',
+    frameAspect = null,
     filterId = 'original',
     mirrorFront = true,
     portraitMode = false,
@@ -732,7 +733,9 @@ export class CameraEngine {
 
       const isVideoPortrait = vh >= vw;
       let targetRatio;
-      if (aspectRatio === '1:1') {
+      if (aspectRatio === 'full' && frameAspect && frameAspect > 0) {
+        targetRatio = frameAspect;
+      } else if (aspectRatio === '1:1') {
         targetRatio = 1;
       } else if (aspectRatio === '16:9') {
         targetRatio = isVideoPortrait ? 9 / 16 : 16 / 9;

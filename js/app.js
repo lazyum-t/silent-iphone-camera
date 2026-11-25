@@ -3,8 +3,8 @@ import { FILTERS, buildCssFilter, getFilterById } from './filters.js';
 import {
   saveMediaItem,
   getAllMediaItems,
-  markMediaSavedToPhotos,
-  deleteMediaItem
+  deleteMediaItems,
+  clearAllMediaItems
 } from './storage.js';
 import {
   buildMediaFilename,
@@ -92,7 +92,9 @@ const el = {
   galleryModal: document.getElementById('gallery-modal'),
   btnGalleryClose: document.getElementById('btn-gallery-close'),
   galleryTitle: document.getElementById('gallery-title'),
+  gallerySubtitle: document.getElementById('gallery-subtitle'),
   btnGallerySaveAll: document.getElementById('btn-gallery-save-all'),
+  btnGalleryClearAll: document.getElementById('btn-gallery-clear-all'),
   galleryEmpty: document.getElementById('gallery-empty'),
   galleryViewer: document.getElementById('gallery-viewer'),
   viewerImage: document.getElementById('viewer-image'),
@@ -112,7 +114,7 @@ const engine = new CameraEngine(el.video, el.canvas);
 const state = {
   ready: false,
   mode: 'photo', // 'video' | 'photo' | 'portrait' | 'square'
-  aspectRatio: '4:3', // '4:3' | '16:9' | '1:1'
+  aspectRatio: 'full', // 'full' | '4:3' | '16:9' | '1:1'
   timerSec: 0, // 0 | 3 | 10
   filterId: 'original',
   exposureEv: 0,
@@ -257,16 +259,18 @@ function updatePreviewTransformAndFilter() {
 }
 
 function updateAspectFrame() {
-  const effectiveAspect = state.mode === 'square' ? '1:1' : state.mode === 'video' ? '16:9' : state.aspectRatio;
-  el.frame.classList.remove('aspect-4-3', 'aspect-16-9', 'aspect-1-1');
+  const effectiveAspect = state.mode === 'square' ? '1:1' : state.mode === 'video' ? 'full' : state.aspectRatio;
+  el.frame.classList.remove('aspect-full', 'aspect-4-3', 'aspect-16-9', 'aspect-1-1');
   if (effectiveAspect === '1:1') {
     el.frame.classList.add('aspect-1-1');
   } else if (effectiveAspect === '16:9') {
     el.frame.classList.add('aspect-16-9');
-  } else {
+  } else if (effectiveAspect === '4:3') {
     el.frame.classList.add('aspect-4-3');
+  } else {
+    el.frame.classList.add('aspect-full');
   }
-  el.toolAspectVal.textContent = effectiveAspect;
+  el.toolAspectVal.textContent = effectiveAspect === 'full' ? 'フル' : effectiveAspect;
 }
 
 // ===== レンズ倍率セレクター（0.5 / 1x / 2 / 3） =====
@@ -361,12 +365,19 @@ async function applyZoom(zoomVal, allowLensSwitch = true) {
   }
 }
 
-function showZoomWheel() {
+function showZoomWheel(autoHide = true) {
   el.zoomWheel.classList.remove('hidden');
+  el.frame.classList.add('zoom-bar-open');
   clearTimeout(zoomWheelHideTimer);
-  zoomWheelHideTimer = setTimeout(() => {
-    el.zoomWheel.classList.add('hidden');
-  }, 3500);
+  if (autoHide) {
+    zoomWheelHideTimer = setTimeout(hideZoomWheel, 3500);
+  }
+}
+
+function hideZoomWheel() {
+  clearTimeout(zoomWheelHideTimer);
+  el.zoomWheel.classList.add('hidden');
+  el.frame.classList.remove('zoom-bar-open');
 }
 
 function renderDetectedLensChips(summary) {
@@ -486,8 +497,12 @@ async function takeSilentPhotoNow() {
 
   try {
     const effectiveAspect = state.mode === 'square' ? '1:1' : state.aspectRatio;
+    const frameAspect = el.frame.clientWidth && el.frame.clientHeight
+      ? el.frame.clientWidth / el.frame.clientHeight
+      : null;
     const { blob, meta } = await engine.captureSilentPhoto({
       aspectRatio: effectiveAspect,
+      frameAspect,
       filterId: state.filterId,
       mirrorFront: state.mirrorFront,
       portraitMode: state.mode === 'portrait',
@@ -508,7 +523,7 @@ async function takeSilentPhotoNow() {
       savedToPhotos: false
     };
 
-    // iOS Safariの User Activation が切れないよう、IndexedDB保存と並行して最速で共有シートを起動
+    // iOS Safariの User Activation が切れないよう、一時保存と並行して最速で共有シートを起動
     const dbSavePromise = saveMediaItem(item).then(() => refreshGalleryFromStorage());
     state.lastCapturedItem = item;
 
@@ -518,17 +533,15 @@ async function takeSilentPhotoNow() {
       await dbSavePromise;
 
       if (shareRes.status === 'shared') {
-        await markMediaSavedToPhotos([id]);
-        await refreshGalleryFromStorage();
-        showStatusPill('「写真」アプリへ保存完了');
+        // 本体保存完了 → 容量節約のためアプリ内から完全に自動削除
+        await purgeMediaItems([id]);
+        showStatusPill('本体に保存・アプリから削除しました');
       } else if (shareRes.status === 'blocked' || shareRes.status === 'unsupported') {
-        // 共有シートが自動起動できなかった場合は1タップ保存トーストを表示
         showQuickSaveToast(item, 'タップして「写真」アプリに保存');
       } else if (shareRes.status === 'cancelled') {
-        showQuickSaveToast(item, 'アプリ内に一時保存しました');
+        showQuickSaveToast(item, '一時保存中（あとで保存できます）');
       }
     } else {
-      // 連続撮影モード（あとで一括で純正写真アプリへ保存）
       await dbSavePromise;
       showQuickSaveToast(item, '無音撮影しました（一括保存できます）');
     }
@@ -592,21 +605,77 @@ async function finishVideoRecording() {
     const file = blobToFile(res.blob, filename);
     const shareRes = await saveFilesToIOSPhotos([file]);
     if (shareRes.status === 'shared') {
-      await markMediaSavedToPhotos([id]);
-      await refreshGalleryFromStorage();
-      showStatusPill('ビデオを「写真」アプリへ保存完了');
+      // 本体保存完了 → 容量節約のためアプリ内から完全に自動削除
+      await purgeMediaItems([id]);
+      showStatusPill('ビデオを本体保存・アプリから削除しました');
       return;
     }
   }
   showQuickSaveToast(item, '動画を撮影しました');
 }
 
-// ===== ギャラリー & iOS写真アプリ保存 =====
+// ===== ギャラリー & 完全削除（スマホ容量解放） =====
 function getObjectUrl(item) {
   if (!state.objectUrls.has(item.id)) {
     state.objectUrls.set(item.id, URL.createObjectURL(item.blob));
   }
   return state.objectUrls.get(item.id);
+}
+
+function revokeObjectUrlsForIds(ids) {
+  const idSet = new Set(ids);
+  for (const id of ids) {
+    const url = state.objectUrls.get(id);
+    if (url) {
+      if (el.viewerImage.src === url) el.viewerImage.removeAttribute('src');
+      if (el.viewerVideo.src === url) {
+        el.viewerVideo.pause();
+        el.viewerVideo.removeAttribute('src');
+        el.viewerVideo.load();
+      }
+      if (el.galleryThumbImg.src === url) el.galleryThumbImg.removeAttribute('src');
+      if (el.quickSaveThumb.src === url) el.quickSaveThumb.removeAttribute('src');
+      URL.revokeObjectURL(url);
+      state.objectUrls.delete(id);
+    }
+  }
+  if (state.lastCapturedItem && idSet.has(state.lastCapturedItem.id)) {
+    state.lastCapturedItem = null;
+    el.quickSaveToast.classList.add('hidden');
+  }
+  if (state.selectedMediaId && idSet.has(state.selectedMediaId)) {
+    state.selectedMediaId = null;
+  }
+}
+
+async function purgeMediaItems(ids) {
+  if (!ids || ids.length === 0) return;
+  revokeObjectUrlsForIds(ids);
+  await deleteMediaItems(ids);
+  await refreshGalleryFromStorage();
+}
+
+async function purgeAllMediaItems() {
+  const allIds = Array.from(state.objectUrls.keys());
+  revokeObjectUrlsForIds(allIds);
+  state.lastCapturedItem = null;
+  state.selectedMediaId = null;
+  el.viewerImage.removeAttribute('src');
+  el.viewerVideo.pause();
+  el.viewerVideo.removeAttribute('src');
+  el.viewerVideo.load();
+  el.galleryThumbImg.removeAttribute('src');
+  el.quickSaveThumb.removeAttribute('src');
+  el.quickSaveToast.classList.add('hidden');
+  await clearAllMediaItems();
+  await refreshGalleryFromStorage();
+}
+
+function formatTotalBytes(list) {
+  const total = list.reduce((sum, item) => sum + (item.blob?.size || 0), 0);
+  if (total === 0) return '0.0 MB';
+  if (total < 1024 * 1024) return `${(total / 1024).toFixed(0)} KB`;
+  return `${(total / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 async function refreshGalleryFromStorage() {
@@ -660,17 +729,16 @@ function closeGalleryModal() {
 
 function renderGalleryModal() {
   const list = state.mediaList;
-  const unsaved = list.filter((m) => !m.savedToPhotos);
-  el.galleryTitle.textContent = `撮影済み (${list.length})`;
+  el.galleryTitle.textContent = `一時保存 (${list.length})`;
+  el.gallerySubtitle.textContent = `使用容量: ${formatTotalBytes(list)}（本体保存で自動削除）`;
 
-  if (unsaved.length > 0) {
-    el.btnGallerySaveAll.textContent = `未保存${unsaved.length}件を写真へ`;
+  if (list.length > 0) {
+    el.btnGallerySaveAll.textContent = `${list.length}件を写真へ`;
     el.btnGallerySaveAll.classList.remove('hidden');
-  } else if (list.length > 0) {
-    el.btnGallerySaveAll.textContent = 'すべて写真へ保存';
-    el.btnGallerySaveAll.classList.remove('hidden');
+    el.btnGalleryClearAll.classList.remove('hidden');
   } else {
     el.btnGallerySaveAll.classList.add('hidden');
+    el.btnGalleryClearAll.classList.add('hidden');
   }
 
   if (list.length === 0) {
@@ -753,19 +821,18 @@ function renderGalleryModal() {
 
 async function saveItemsToPhotosFlow(items) {
   if (!items || items.length === 0) return;
+  const ids = items.map((i) => i.id);
   const files = items.map((it) => blobToFile(it.blob, it.filename));
   const res = await saveFilesToIOSPhotos(files);
 
   if (res.status === 'shared') {
-    await markMediaSavedToPhotos(items.map((i) => i.id));
-    await refreshGalleryFromStorage();
-    showStatusPill(`${items.length}件を「写真」アプリへ保存`);
+    await purgeMediaItems(ids);
+    showStatusPill(`${items.length}件を本体保存・アプリから完全削除しました`);
   } else if (res.status === 'unsupported') {
-    // PCブラウザ等：通常のダウンロードへフォールバック
+    // PCブラウザ等：通常のダウンロードへフォールバック後、アプリ内から完全削除
     items.forEach((it) => downloadBlobAsFile(it.blob, it.filename));
-    await markMediaSavedToPhotos(items.map((i) => i.id));
-    await refreshGalleryFromStorage();
-    showStatusPill(`${items.length}件をダウンロードしました`);
+    await purgeMediaItems(ids);
+    showStatusPill(`${items.length}件を保存・アプリから完全削除しました`);
   }
 }
 
@@ -928,12 +995,12 @@ function bindEvents() {
 
   // ドロワーツール類
   el.toolAspect.addEventListener('click', () => {
-    const order = ['4:3', '16:9', '1:1'];
+    const order = ['full', '4:3', '16:9', '1:1'];
     const idx = order.indexOf(state.aspectRatio);
     state.aspectRatio = order[(idx + 1) % order.length];
     if (state.mode === 'square') state.mode = 'photo';
     updateAspectFrame();
-    showStatusPill(`アスペクト比 ${state.aspectRatio}`);
+    showStatusPill(`アスペクト比 ${state.aspectRatio === 'full' ? 'フル' : state.aspectRatio}`);
   });
 
   el.toolTimer.addEventListener('click', () => {
@@ -972,15 +1039,19 @@ function bindEvents() {
     await applyExposure(0);
   });
 
-  // ズームホイールスライダー（ドラッグ中は滑らかズームのみ、離した時に1回だけ物理レンズ切替）
+  // カメラ上部ズームバー（タッチ中は消さず、離した時に1回だけ物理レンズ切替）
+  const holdZoomBar = () => showZoomWheel(false);
+  const releaseZoomBar = () => showZoomWheel(true);
+  el.zoomRangeSlider.addEventListener('pointerdown', holdZoomBar);
+  el.zoomRangeSlider.addEventListener('touchstart', holdZoomBar, { passive: true });
+  el.zoomRangeSlider.addEventListener('pointerup', releaseZoomBar);
+  el.zoomRangeSlider.addEventListener('touchend', releaseZoomBar, { passive: true });
   el.zoomRangeSlider.addEventListener('input', (e) => {
-    clearTimeout(zoomWheelHideTimer);
-    zoomWheelHideTimer = setTimeout(() => el.zoomWheel.classList.add('hidden'), 3000);
+    showZoomWheel(false);
     applyZoom(Number(e.target.value), false);
   });
   el.zoomRangeSlider.addEventListener('change', async (e) => {
-    clearTimeout(zoomWheelHideTimer);
-    zoomWheelHideTimer = setTimeout(() => el.zoomWheel.classList.add('hidden'), 3000);
+    showZoomWheel(true);
     await applyZoom(Number(e.target.value), true);
   });
 
@@ -998,28 +1069,30 @@ function bindEvents() {
     const item = state.mediaList.find((m) => m.id === state.selectedMediaId);
     if (item) await saveItemsToPhotosFlow([item]);
   });
-  el.btnViewerDownload.addEventListener('click', () => {
+  el.btnViewerDownload.addEventListener('click', async () => {
     const item = state.mediaList.find((m) => m.id === state.selectedMediaId);
     if (item) {
       downloadBlobAsFile(item.blob, item.filename);
-      showStatusPill('ファイルとしてダウンロードしました');
+      await purgeMediaItems([item.id]);
+      showStatusPill('保存してアプリから完全削除しました');
     }
   });
   el.btnViewerDelete.addEventListener('click', async () => {
     const id = state.selectedMediaId;
     if (!id) return;
-    await deleteMediaItem(id);
-    if (state.objectUrls.has(id)) {
-      URL.revokeObjectURL(state.objectUrls.get(id));
-      state.objectUrls.delete(id);
-    }
-    state.selectedMediaId = null;
-    await refreshGalleryFromStorage();
+    await purgeMediaItems([id]);
+    showStatusPill('完全に削除しました');
   });
   el.btnGallerySaveAll.addEventListener('click', async () => {
-    const unsaved = state.mediaList.filter((m) => !m.savedToPhotos);
-    const targets = unsaved.length > 0 ? unsaved : state.mediaList;
-    await saveItemsToPhotosFlow(targets);
+    await saveItemsToPhotosFlow([...state.mediaList]);
+  });
+  el.btnGalleryClearAll.addEventListener('click', async () => {
+    if (state.mediaList.length === 0) return;
+    if (!confirm(`一時保存中の ${state.mediaList.length} 件をすべて完全に削除しますか？（元に戻せません）`)) {
+      return;
+    }
+    await purgeAllMediaItems();
+    showStatusPill('アプリ内データをすべて完全削除しました');
   });
   el.btnDismissHint.addEventListener('click', () => {
     el.iosHintBar.classList.add('hidden');
@@ -1067,7 +1140,7 @@ function bindViewfinderGestures() {
     'touchstart',
     (e) => {
       if (!state.ready) return;
-      if (e.target.closest('.zoom-controls-wrap') || e.target.closest('.permission-overlay')) return;
+      if (e.target.closest('.zoom-controls-wrap') || e.target.closest('.zoom-wheel') || e.target.closest('.permission-overlay')) return;
 
       if (e.touches.length === 2) {
         isPinching = true;
@@ -1099,7 +1172,7 @@ function bindViewfinderGestures() {
     'touchmove',
     (e) => {
       if (!state.ready) return;
-      if (e.target.closest('.zoom-controls-wrap')) return;
+      if (e.target.closest('.zoom-controls-wrap') || e.target.closest('.zoom-wheel')) return;
 
       if (e.touches.length === 2 && isPinching && pinchStartDist > 0) {
         e.preventDefault();
@@ -1147,7 +1220,7 @@ function bindViewfinderGestures() {
 
     if (!isDraggingExposure && !longPressFired && e.changedTouches.length === 1) {
       const t = e.changedTouches[0];
-      if (!e.target.closest('.zoom-controls-wrap') && !e.target.closest('.permission-overlay')) {
+      if (!e.target.closest('.zoom-controls-wrap') && !e.target.closest('.zoom-wheel') && !e.target.closest('.permission-overlay')) {
         if (Math.hypot(t.clientX - touchStartX, t.clientY - touchStartY) < 12) {
           triggerFocusAtClientPoint(t.clientX, t.clientY, false);
         }
