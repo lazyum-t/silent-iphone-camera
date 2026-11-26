@@ -8,11 +8,11 @@
   <meta name="apple-mobile-web-app-title" content="カメラ" />
   <meta name="theme-color" content="#000000" />
   <meta name="format-detection" content="telephone=no" />
-  <meta name="app-version" content="20261126-193000" />
+  <meta name="app-version" content="20261126-210000" />
   <title>無音カメラ — iPhone純正風カメラ</title>
   <script>
   (()=>{
-    const V="20261126-193000",SK="__ag_upd_snap__",TK="__ag_upd_try__",AK="__ag_upd_at__";
+    const V="20261126-210000",SK="__ag_upd_snap__",TK="__ag_upd_try__",AK="__ag_upd_at__";
     try{
       const u=new URL(location.href);
       if(u.searchParams.has("_v")){
@@ -128,12 +128,21 @@
     document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")check(false);});
     window.addEventListener("pageshow",(e)=>{if(e.persisted)check(true);});
     setInterval(()=>{if(pendingVer&&canReload())applyUpdate(pendingVer);},1500);
+  if("serviceWorker"in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.register("./sw.js",{scope:"./",updateViaCache:"none"}).catch(()=>{});},{once:true});}
   })();
   </script>
   <link rel="manifest" href="./manifest.json" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
-  <link rel="stylesheet" href="./css/style.css?v=20261126-193000" />
+  <link rel="preload" href="./css/style.css?v=20261126-210000" as="style" />
+  <link rel="stylesheet" href="./css/style.css?v=20261126-210000" />
+  <link rel="modulepreload" href="./js/app.js?v=20261126-210000" />
+  <link rel="modulepreload" href="./js/camera-engine.js" />
+  <link rel="modulepreload" href="./js/filters.js" />
+  <link rel="modulepreload" href="./js/ios-photos.js" />
+  <link rel="modulepreload" href="./js/storage.js" />
+  <script>try{if(localStorage.getItem('silent_camera_perm_ok')==='1')document.documentElement.classList.add('cam-perm-ok');}catch(_){}</script>
+  <style>.cam-perm-ok #camera-permission-overlay:not(.force-show){display:none!important;}</style>
 </head>
 <body>
   <div id="app" class="camera-app">
@@ -475,6 +484,6 @@
     </div>
   </div>
 
-  <script type="module" src="./js/app.js?v=20261126-193000"></script>
+  <script type="module" src="./js/app.js?v=20261126-210000"></script>
 </body>
 </html>

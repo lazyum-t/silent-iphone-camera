@@ -238,7 +238,6 @@ async function bootstrap() {
   renderFilterChips();
   applyInitialToolStates();
   bindEvents();
-  await refreshGalleryFromStorage();
 
   // HTTPSチェック（iOS SafariではHTTPSまたはlocalhostが必須）
   const isSecure = window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
@@ -248,12 +247,14 @@ async function bootstrap() {
     el.permissionNote.textContent = '共有ボタン →「ホーム画面に追加」で純正アプリのように全画面で使えます。';
   }
 
-  // 自動起動を試みる（既に許可済みならそのまま起動）
+  // カメラ起動とIndexedDBギャラリー読込を完全並列実行して初期表示を最速化
+  const galleryPromise = refreshGalleryFromStorage().catch(() => {});
   try {
     await startCameraFlow();
   } catch {
     // 初回やユーザー操作が必要な環境ではスタートカードを表示したまま待つ
   }
+  await galleryPromise;
 }
 
 function registerServiceWorker() {
@@ -264,6 +265,8 @@ function registerServiceWorker() {
 
 async function startCameraFlow() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    el.permissionOverlay.classList.add('force-show');
+    el.permissionOverlay.classList.remove('hidden');
     el.permissionTitle.textContent = 'カメラを利用できません';
     el.permissionDesc.textContent = 'Safariなどの対応ブラウザ、かつHTTPS接続で開いてください。';
     el.btnStartCamera.classList.add('hidden');
@@ -275,12 +278,18 @@ async function startCameraFlow() {
     el.btnStartCamera.textContent = 'カメラを起動中...';
     const summary = await engine.init();
     state.ready = true;
+    try { localStorage.setItem('silent_camera_perm_ok', '1'); } catch {}
+    el.permissionOverlay.classList.remove('force-show');
     el.permissionOverlay.classList.add('hidden');
     renderLensSelector(summary);
     renderDetectedLensChips(summary);
     updatePreviewTransformAndFilter();
     showStatusPill(summary.hasUltraWide ? '無音モード・超広角対応' : '無音モードで起動');
   } catch (err) {
+    try { localStorage.removeItem('silent_camera_perm_ok'); } catch {}
+    document.documentElement.classList.remove('cam-perm-ok');
+    el.permissionOverlay.classList.add('force-show');
+    el.permissionOverlay.classList.remove('hidden');
     el.btnStartCamera.disabled = false;
     el.btnStartCamera.textContent = 'もう一度カメラを起動';
     el.permissionTitle.textContent = 'カメラの許可が必要です';

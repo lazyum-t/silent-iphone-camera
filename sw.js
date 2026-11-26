@@ -1,5 +1,5 @@
-const CACHE_NAME = 'silent-iphone-camera-20261126-193000';
-const ASSET_VER = '20261126-193000';
+const CACHE_NAME = 'silent-iphone-camera-20261126-210000';
+const ASSET_VER = '20261126-210000';
 const ASSETS = [
   './',
   './index.html',
