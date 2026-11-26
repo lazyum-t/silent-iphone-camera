@@ -1,4 +1,4 @@
-const CACHE_NAME = 'silent-iphone-camera-v4';
+const CACHE_NAME = 'silent-iphone-camera-v5';
 const ASSETS = [
   './',
   './index.html',

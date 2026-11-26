@@ -1177,11 +1177,13 @@ function bindViewfinderGestures() {
       if (e.touches.length === 2 && isPinching && pinchStartDist > 0) {
         e.preventDefault();
         const dist = getDist(e.touches[0], e.touches[1]);
-        const ratio = dist / pinchStartDist;
-        const nextZoom = Math.max(0.5, Math.min(10.0, pinchStartZoom * ratio));
+        const ratio = dist / Math.max(10, pinchStartDist);
+        // iPhone純正カメラ相当のピンチ感度（0.5x->2.5x相当の動きで0.5x->約9xへ対称に拡縮）
+        const PINCH_EXPONENT = 1.8;
+        const nextZoom = Math.max(0.5, Math.min(10.0, pinchStartZoom * Math.pow(ratio, PINCH_EXPONENT)));
         // ピンチ中はスムーズにズーム（物理レンズ切替の引っかかりを避け、終了時に最適レンズ判定）
         applyZoom(nextZoom, false);
-        showZoomWheel();
+        showZoomWheel(false);
         return;
       }
 
@@ -1213,6 +1215,7 @@ function bindViewfinderGestures() {
 
     if (isPinching && e.touches.length < 2) {
       isPinching = false;
+      showZoomWheel(true);
       // ピンチ終了時に現在の倍率に最適な物理レンズへ切り替え
       await applyZoom(engine.currentZoom, true);
       return;
