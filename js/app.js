@@ -160,10 +160,20 @@ function showFreezeFrame() {
   }
   ctx.drawImage(video, 0, 0, fc.width, fc.height);
   ctx.restore();
+
+  // 現在のvideoと同じカバーサイズ＋ズーム倍率で外側が黒くならないように表示
+  const { width, height } = computeCoverBoxSize(video.videoWidth, video.videoHeight);
+  if (width && height) {
+    fc.style.width = `${width}px`;
+    fc.style.height = `${height}px`;
+  }
+  const zoomScale = Math.max(1.0, engine.digitalZoomFactor) * 1.06;
+  fc.style.transform = `translate3d(-50%, -50%, 0) scale(${zoomScale.toFixed(4)})`;
   fc.classList.remove('fade-out', 'hidden');
 }
 
 function hideFreezeFrame() {
+  syncVideoCoverLayout();
   const fc = el.freezeCanvas;
   if (fc.classList.contains('hidden')) return;
   fc.classList.add('fade-out');
@@ -249,11 +259,45 @@ function applyInitialToolStates() {
   }
 }
 
+// ===== カバーサイズ厳密計算（iOS Safariで映像の外側に黒帯が出る問題を防止） =====
+function computeCoverBoxSize(mediaW, mediaH) {
+  const fw = el.frame.clientWidth;
+  const fh = el.frame.clientHeight;
+  if (!fw || !fh || !mediaW || !mediaH) return { width: 0, height: 0 };
+
+  const frameRatio = fw / fh;
+  const mediaRatio = mediaW / mediaH;
+  let w;
+  let h;
+  if (mediaRatio > frameRatio) {
+    // 映像の方が横長：高さを枠に合わせて横を広げる（+4pxの安全マージンで端の黒線を完全防止）
+    h = Math.ceil(fh) + 4;
+    w = Math.ceil(h * mediaRatio) + 4;
+  } else {
+    // 映像の方が縦長：幅を枠に合わせて縦を広げる
+    w = Math.ceil(fw) + 4;
+    h = Math.ceil(w / mediaRatio) + 4;
+  }
+  return { width: w, height: h };
+}
+
+function syncVideoCoverLayout() {
+  const vw = el.video.videoWidth;
+  const vh = el.video.videoHeight;
+  if (!vw || !vh) return;
+  const { width, height } = computeCoverBoxSize(vw, vh);
+  if (width && height) {
+    el.video.style.width = `${width}px`;
+    el.video.style.height = `${height}px`;
+  }
+}
+
 // ===== プレビュー表示更新（デジタルズーム / 鏡像 / フィルター / 露出） =====
 function updatePreviewTransformAndFilter() {
+  syncVideoCoverLayout();
   const mirror = engine.facingMode === 'user' && state.mirrorFront ? -1 : 1;
   const scale = Math.max(1.0, engine.digitalZoomFactor);
-  el.video.style.transform = `scale(${mirror * scale}, ${scale})`;
+  el.video.style.transform = `translate3d(-50%, -50%, 0) scale(${(mirror * scale).toFixed(4)}, ${scale.toFixed(4)})`;
   el.video.style.filter = buildCssFilter(state.filterId, state.exposureEv, state.useSoftwareExposure);
   el.portraitOverlay.classList.toggle('hidden', state.mode !== 'portrait');
 }
@@ -271,6 +315,7 @@ function updateAspectFrame() {
     el.frame.classList.add('aspect-full');
   }
   el.toolAspectVal.textContent = effectiveAspect === 'full' ? 'フル' : effectiveAspect;
+  requestAnimationFrame(syncVideoCoverLayout);
 }
 
 // ===== レンズ倍率セレクター（0.5 / 1x / 2 / 3） =====
@@ -1061,6 +1106,16 @@ function bindEvents() {
       engine.ensureStreamAlive().then(() => updatePreviewTransformAndFilter()).catch(() => {});
     }
   });
+
+  // 解像度変化・画面回転・ドロワー開閉時に映像カバーサイズを即座に再計算して黒帯を防止
+  ['loadedmetadata', 'loadeddata', 'playing', 'resize'].forEach((evt) => {
+    el.video.addEventListener(evt, syncVideoCoverLayout);
+  });
+  window.addEventListener('resize', syncVideoCoverLayout);
+  window.addEventListener('orientationchange', () => setTimeout(syncVideoCoverLayout, 120));
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(() => syncVideoCoverLayout()).observe(el.frame);
+  }
 
   // ギャラリー操作
   el.btnGallery.addEventListener('click', () => openGalleryModal());
