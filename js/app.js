@@ -187,8 +187,53 @@ function hideFreezeFrame() {
 engine.onBeforeLensSwitch = showFreezeFrame;
 engine.onAfterLensSwitch = hideFreezeFrame;
 
+// ===== 設定の永続化（更新・再起動時も撮影設定を引き継ぐ） =====
+const PREFS_STORAGE_KEY = 'silent_camera_prefs_v1';
+
+function saveCameraPrefs() {
+  try {
+    const prefs = {
+      mode: state.mode,
+      aspectRatio: state.aspectRatio,
+      timerSec: state.timerSec,
+      filterId: state.filterId,
+      exposureEv: state.exposureEv,
+      gridOn: state.gridOn,
+      mirrorFront: state.mirrorFront,
+      autoSaveSheet: state.autoSaveSheet
+    };
+    localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(prefs));
+  } catch {
+    // ストレージ制限時は無視
+  }
+}
+
+function loadCameraPrefs() {
+  try {
+    const raw = localStorage.getItem(PREFS_STORAGE_KEY);
+    if (!raw) return;
+    const p = JSON.parse(raw);
+    if (['video', 'photo', 'portrait', 'square'].includes(p.mode)) state.mode = p.mode;
+    if (['full', '4:3', '16:9', '1:1'].includes(p.aspectRatio)) state.aspectRatio = p.aspectRatio;
+    if ([0, 3, 10].includes(p.timerSec)) state.timerSec = p.timerSec;
+    if (typeof p.filterId === 'string' && getFilterById(p.filterId)) state.filterId = p.filterId;
+    if (typeof p.exposureEv === 'number' && Number.isFinite(p.exposureEv)) {
+      state.exposureEv = Math.max(-2.0, Math.min(2.0, p.exposureEv));
+    }
+    if (typeof p.gridOn === 'boolean') state.gridOn = p.gridOn;
+    if (typeof p.mirrorFront === 'boolean') state.mirrorFront = p.mirrorFront;
+    if (typeof p.autoSaveSheet === 'boolean') state.autoSaveSheet = p.autoSaveSheet;
+  } catch {
+    // 破損データは無視
+  }
+}
+
+window.__APP_CAN_RELOAD__ = () => !state.busyCapturing && !engine.isRecording && !state.countdownTimerId;
+window.__APP_BEFORE_UPDATE__ = saveCameraPrefs;
+
 // ===== 初期化 =====
 async function bootstrap() {
+  loadCameraPrefs();
   registerServiceWorker();
   renderFilterChips();
   applyInitialToolStates();
@@ -213,7 +258,7 @@ async function bootstrap() {
 
 function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
+    navigator.serviceWorker.register('./sw.js', { scope: './', updateViaCache: 'none' }).catch(() => {});
   }
 }
 
@@ -250,7 +295,25 @@ function applyInitialToolStates() {
   el.gridOverlay.classList.toggle('hidden', !state.gridOn);
   el.toolGrid.classList.toggle('active', state.gridOn);
   el.toolMirror.classList.toggle('active', state.mirrorFront);
-  el.toolAspectVal.textContent = state.aspectRatio;
+  el.toolAspectVal.textContent = state.aspectRatio === 'full' ? 'フル' : state.aspectRatio;
+  el.toolTimerVal.textContent = state.timerSec === 0 ? 'オフ' : `${state.timerSec}秒`;
+  el.toolTimer.classList.toggle('active', state.timerSec > 0);
+  el.modeSelector.querySelectorAll('.mode-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.mode === state.mode);
+  });
+  el.btnShutter.classList.toggle('video-mode', state.mode === 'video');
+  const activeFilter = getFilterById(state.filterId);
+  if (activeFilter) {
+    el.toolFilterVal.textContent = activeFilter.name;
+    el.btnTopFilter.classList.toggle('active', state.filterId !== 'original');
+    el.toolFilter.classList.toggle('active', state.filterId !== 'original');
+  }
+  const formattedEv = state.exposureEv > 0 ? `+${state.exposureEv.toFixed(1)}` : state.exposureEv.toFixed(1);
+  el.exposureSlider.value = String(state.exposureEv);
+  el.exposureValueLabel.textContent = formattedEv;
+  el.toolExposureVal.textContent = formattedEv;
+  el.btnTopExposure.classList.toggle('active', Math.abs(state.exposureEv) > 0.01);
+  el.toolExposure.classList.toggle('active', Math.abs(state.exposureEv) > 0.01);
   updateAutoSaveButtonUI();
   updateAspectFrame();
 
@@ -1102,10 +1165,13 @@ function bindEvents() {
 
   // iPhoneのバックグラウンド復帰・画面ロック解除時の暗転を自動復旧
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && state.ready) {
+    if (document.visibilityState === 'hidden') {
+      saveCameraPrefs();
+    } else if (document.visibilityState === 'visible' && state.ready) {
       engine.ensureStreamAlive().then(() => updatePreviewTransformAndFilter()).catch(() => {});
     }
   });
+  window.addEventListener('pagehide', saveCameraPrefs);
 
   // 解像度変化・画面回転・ドロワー開閉時に映像カバーサイズを即座に再計算して黒帯を防止
   ['loadedmetadata', 'loadeddata', 'playing', 'resize'].forEach((evt) => {
